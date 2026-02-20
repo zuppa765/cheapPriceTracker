@@ -22,24 +22,46 @@ def send_telegram(text):
     })
 
 
+def extract_weight(title):
+    match = re.search(r"(\d+)\s?g", title.lower())
+    if match:
+        return int(match.group(1))
+    return None
+
+
 def get_lowest_price():
     r = requests.get(SEARCH_URL, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    prices = []
+    offers = soup.find_all("article")
 
-    for text in soup.stripped_strings:
-        match = re.search(r"(\d+[.,]\d+)\s*zł\s*/\s*100\s*g", text)
-        if match:
-            price = float(match.group(1).replace(",", "."))
-            prices.append(price)
+    lowest_price_100g = None
 
-    return min(prices) if prices else None
+    for offer in offers:
+        text = offer.get_text(" ", strip=True)
+
+        # ищем цену
+        price_match = re.search(r"(\d+[.,]\d+)\s*zł", text)
+        if not price_match:
+            continue
+
+        price = float(price_match.group(1).replace(",", "."))
+
+        # ищем вес
+        weight = extract_weight(text)
+        if not weight:
+            continue
+
+        price_per_100g = (price / weight) * 100
+
+        if lowest_price_100g is None or price_per_100g < lowest_price_100g:
+            lowest_price_100g = round(price_per_100g, 2)
+
+    return lowest_price_100g
 
 
 def main():
     lowest = get_lowest_price()
-
     today = datetime.utcnow().strftime("%d.%m.%Y")
 
     if lowest:
@@ -50,9 +72,7 @@ def main():
             f"🔎 {SEARCH_URL}"
         )
     else:
-        send_telegram(
-            f"⚠ Не удалось найти цену\n{SEARCH_URL}"
-        )
+        send_telegram("⚠ Не удалось найти предложения.")
 
 
 if __name__ == "__main__":
