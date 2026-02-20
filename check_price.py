@@ -10,70 +10,49 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
 }
-
 
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     requests.post(url, data={
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": text
+        "text": text[:4000]
     })
 
+def main():
+    print("🚀 Starting price check...")
 
-def extract_weight(title):
-    match = re.search(r"(\d+)\s?g", title.lower())
-    if match:
-        return int(match.group(1))
-    return None
-
-
-def get_lowest_price():
     r = requests.get(SEARCH_URL, headers=HEADERS)
+
+    print("Status code:", r.status_code)
+    print("Final URL:", r.url)
+    print("Response length:", len(r.text))
+
     soup = BeautifulSoup(r.text, "html.parser")
 
-    offers = soup.find_all("article")
+    articles = soup.find_all("article")
 
-    lowest_price_100g = None
+    print("Articles found:", len(articles))
 
-    for offer in offers:
-        text = offer.get_text(" ", strip=True)
+    debug_message = f"""
+DEBUG INFO
+Status: {r.status_code}
+Final URL: {r.url}
+Response length: {len(r.text)}
+Articles found: {len(articles)}
+"""
 
-        # ищем цену
-        price_match = re.search(r"(\d+[.,]\d+)\s*zł", text)
-        if not price_match:
-            continue
+    # Покажем первые 2 карточки если есть
+    if articles:
+        debug_message += "\n\nFIRST OFFER TEXT:\n"
+        debug_message += articles[0].get_text(" ", strip=True)[:1000]
 
-        price = float(price_match.group(1).replace(",", "."))
-
-        # ищем вес
-        weight = extract_weight(text)
-        if not weight:
-            continue
-
-        price_per_100g = (price / weight) * 100
-
-        if lowest_price_100g is None or price_per_100g < lowest_price_100g:
-            lowest_price_100g = round(price_per_100g, 2)
-
-    return lowest_price_100g
-
-
-def main():
-    lowest = get_lowest_price()
-    today = datetime.utcnow().strftime("%d.%m.%Y")
-
-    if lowest:
-        send_telegram(
-            f"🍼 Kendamil Bio 2\n"
-            f"📅 {today}\n"
-            f"💰 Самая дешёвая цена: {lowest} zł / 100g\n"
-            f"🔎 {SEARCH_URL}"
-        )
     else:
-        send_telegram("⚠ Не удалось найти предложения.")
+        debug_message += "\n\nNO ARTICLES FOUND\n"
+        debug_message += r.text[:1000]
 
+    send_telegram(debug_message)
 
 if __name__ == "__main__":
     main()
