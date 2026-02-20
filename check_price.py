@@ -2,9 +2,9 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import os
+from datetime import datetime
 
 SEARCH_URL = "https://allegro.pl/listing?string=kendamil%20bio%202"
-PRICE_LIMIT = 8.50  # zł за 100g
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -40,11 +40,18 @@ def get_lowest_price():
 def main():
     lowest = get_lowest_price()
 
-    if lowest and lowest < PRICE_LIMIT:
+    today = datetime.utcnow().strftime("%d.%m.%Y")
+
+    if lowest:
         send_telegram(
-            f"🔥 Kendamil Bio 2 подешевел!\n"
-            f"{lowest} zł / 100g\n"
-            f"{SEARCH_URL}"
+            f"🍼 Kendamil Bio 2\n"
+            f"📅 {today}\n"
+            f"💰 Самая дешёвая цена: {lowest} zł / 100g\n"
+            f"🔎 {SEARCH_URL}"
+        )
+    else:
+        send_telegram(
+            f"⚠ Не удалось найти цену\n{SEARCH_URL}"
         )
 
 
