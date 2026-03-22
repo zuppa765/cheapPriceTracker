@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import os
 import re
 from datetime import datetime, UTC
+from zoneinfo import ZoneInfo
 
 SEARCH_URL = "https://www.vinted.pl/catalog?search_text=love%20to%20dream&brand_ids[]=559556&price_to=50&currency=PLN"
 
@@ -107,7 +108,8 @@ def get_items():
 def main():
     items = get_items()
 
-    today = datetime.now(UTC).strftime("%d.%m.%Y")
+    now = datetime.now(ZoneInfo("Europe/Warsaw"))
+    timestamp = now.strftime("%d.%m.%Y %H:%M")
 
     if not items:
         send_telegram("⚠ Не найдено подходящих товаров.")
@@ -121,7 +123,7 @@ def main():
 
         caption = (
             f"🧸 Vinted alert\n"
-            f"📅 {today}\n"
+            f"📅 {timestamp}\n"
             f"💰 {price} zł\n"
             f"{title}\n"
             f"{link}"
