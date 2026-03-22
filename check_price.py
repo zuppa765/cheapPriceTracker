@@ -1,10 +1,10 @@
 import requests
 from bs4 import BeautifulSoup
-import re
 import os
+import re
 from datetime import datetime
 
-SEARCH_URL = "https://allegro.pl/listing?string=kendamil%20bio%202"
+SEARCH_URL = "https://www.vinted.pl/catalog?search_text=love%20to%20dream&brand_ids[]=559556&price_to=50&currency=PLN"
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -22,57 +22,63 @@ def send_telegram(text):
     })
 
 
-def extract_weight(title):
-    match = re.search(r"(\d+)\s?g", title.lower())
+def parse_price(text):
+    match = re.search(r"(\d+[.,]?\d*)\s*zł", text.lower())
     if match:
-        return int(match.group(1))
+        return float(match.group(1).replace(",", "."))
     return None
 
 
-def get_lowest_price():
+def get_items():
     r = requests.get(SEARCH_URL, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    offers = soup.find_all("article")
+    items = soup.find_all("a", href=True)
 
-    lowest_price_100g = None
+    results = []
 
-    for offer in offers:
-        text = offer.get_text(" ", strip=True)
+    for item in items:
+        text = item.get_text(" ", strip=True)
 
-        # ищем цену
-        price_match = re.search(r"(\d+[.,]\d+)\s*zł", text)
-        if not price_match:
+        price = parse_price(text)
+        if not price:
             continue
 
-        price = float(price_match.group(1).replace(",", "."))
-
-        # ищем вес
-        weight = extract_weight(text)
-        if not weight:
+        # filter price <= 50 PLN
+        if price > 50:
             continue
 
-        price_per_100g = (price / weight) * 100
+        title = text[:120]
+        link = item["href"]
 
-        if lowest_price_100g is None or price_per_100g < lowest_price_100g:
-            lowest_price_100g = round(price_per_100g, 2)
+        if not link.startswith("http"):
+            link = "https://www.vinted.pl" + link
 
-    return lowest_price_100g
+        results.append({
+            "title": title,
+            "price": price,
+            "link": link
+        })
+
+    return results
 
 
 def main():
-    lowest = get_lowest_price()
+    items = get_items()
     today = datetime.utcnow().strftime("%d.%m.%Y")
 
-    if lowest:
-        send_telegram(
-            f"🍼 Kendamil Bio 2\n"
-            f"📅 {today}\n"
-            f"💰 Самая дешёвая цена: {lowest} zł / 100g\n"
-            f"🔎 {SEARCH_URL}"
+    if not items:
+        send_telegram("⚠ Не найдено подходящих товаров.")
+        return
+
+    for item in items[:5]:  # limit spam
+        msg = (
+            f"🧸 Vinted alert\n"
+            f"💰 {item['price']} zł\n"
+            f"{item['title']}\n"
+            f"🔗 {item['link']}"
         )
-    else:
-        send_telegram("⚠ Не удалось найти предложения.")
+        send_telegram(msg)
 
 
 if __name__ == "__main__":
