@@ -13,6 +13,13 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
+r = requests.get(SEARCH_URL, headers=HEADERS)
+
+print("STATUS:", r.status_code)
+print("LENGTH:", len(r.text))
+
+with open("debug.html", "w", encoding="utf-8") as f:
+    f.write(r.text)
 
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -36,7 +43,7 @@ def get_items():
     items = soup.find_all("a", href=True)
 
     results = []
-
+    
     for item in items:
         text = item.get_text(" ", strip=True)
 
