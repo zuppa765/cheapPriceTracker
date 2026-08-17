@@ -58,46 +58,44 @@ def get_items():
 
     seen = load_seen()
 
-    for item in items:
-        title_attr = item.get("title", "")
-        link = item.get("href")
+for item in items:
+    title_attr = item.get("title", "")
+    link = item.get("href")
 
-        if not title_attr or not link:
-            continue
+    if not title_attr or not link:
+        continue
 
-        # normalize link
-        if not link.startswith("http"):
-            link = "https://www.vinted.pl" + link
+    # normalize link
+    if link.startswith("/"):
+        link = "https://www.vinted.pl" + link
+    elif not link.startswith("http"):
+        link = "https://www.vinted.pl/" + link
 
+    if link in seen:
+        continue
 
-        if link in seen:
-            continue
+    price = parse_price(title_attr)
 
-        price = parse_price(title_attr)
-        if not price or price > 50:
-            continue
+    if not price or price > 50:
+        continue
 
-        title = title_attr.split(",")[0]
+    title = title_attr.split(",")[0]
 
-        # get image
-        parent = item.find_parent("div", class_="new-item-box__container")
+    parent = item.find_parent(
+        "div",
+        class_="new-item-box__container"
+    )
 
-        img_el = None
-        if parent:
-            img_el = parent.find("img")
+    image_url = get_image_url(parent)
 
-        image_url = None
-        if img_el:
-            image_url = img_el.get("src") or img_el.get("data-src")
+    results.append({
+        "title": title,
+        "price": price,
+        "link": link,
+        "image": image_url,
+    })
 
-        results.append({
-            "title": title,
-            "price": price,
-            "link": link,
-            "image": image_url
-        })
-
-        seen.add(link)
+    seen.add(link)
 
     save_seen(seen)
 
