@@ -44,96 +44,152 @@ def save_seen(seen):
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
-    requests.post(
+    response = requests.post(
         url,
         data={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": text,
         },
+        timeout=30,
+    )
+
+    print(
+        "Telegram message:",
+        response.status_code,
+        response.text,
     )
 
 
 def send_telegram_photo(photo_url, caption):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-
-    response = requests.post(
-        url,
-        data={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "photo": photo_url,
-            "caption": caption,
-        },
+    telegram_url = (
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
     )
 
-    print("Telegram:", response.status_code, response.text)
+    try:
+        print("Downloading image:", photo_url)
+
+        # Download image from Vinted first
+        response = requests.get(
+            photo_url,
+            headers=HEADERS,
+            timeout=20,
+        )
+
+        response.raise_for_status()
+
+        print(
+            "Image downloaded:",
+            len(response.content),
+            "bytes",
+        )
+
+        # Upload actual image bytes to Telegram
+        telegram_response = requests.post(
+            telegram_url,
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "caption": caption,
+            },
+            files={
+                "photo": (
+                    "vinted.webp",
+                    response.content,
+                    "image/webp",
+                )
+            },
+            timeout=30,
+        )
+
+        print(
+            "Telegram photo:",
+            telegram_response.status_code,
+            telegram_response.text,
+        )
+
+    except requests.RequestException as e:
+        print("Image/Telegram error:", e)
+
+        # Fallback to text message
+        send_telegram(caption)
 
 
 def parse_price(text):
-    match = re.search(r"(\d+[.,]?\d*)\s*zł", text.lower())
+    match = re.search(
+        r"(\d+[.,]?\d*)\s*zł",
+        text.lower(),
+    )
 
     if match:
-        return float(match.group(1).replace(",", "."))
+        return float(
+            match.group(1).replace(",", ".")
+        )
 
     return None
 
 
 def get_image_url(parent):
     """
-    Extract the product image URL from a Vinted product container.
+    Get the product image from the Vinted product container.
     """
 
     if not parent:
         return None
 
+    # Vinted currently provides:
+    #
+    # data-testid="product-item-id-...--image--img"
+    #
+    # src="https://images1.vinted.net/..."
+
+    img = parent.find(
+        "img",
+        attrs={
+            "data-testid": lambda value:
+                value and value.endswith("--image--img")
+        },
+    )
+
+    if img:
+        image_url = img.get("src")
+
+        if image_url:
+            return image_url
+
+    # Fallback in case Vinted changes the data-testid
     img = parent.find("img")
 
-    if not img:
-        return None
+    if img:
+        for attr in (
+            "src",
+            "data-src",
+            "data-lazy-src",
+            "data-original",
+        ):
+            image_url = img.get(attr)
 
-    # Normal image / lazy-loaded image
-    for attr in (
-        "src",
-        "data-src",
-        "data-lazy-src",
-        "data-original",
-    ):
-        value = img.get(attr)
-
-        if value:
-            return value
-
-    # srcset
-    srcset = img.get("srcset") or img.get("data-srcset")
-
-    if srcset:
-        candidates = []
-
-        for entry in srcset.split(","):
-            parts = entry.strip().split()
-
-            if parts:
-                candidates.append(parts[0])
-
-        if candidates:
-            # Usually the last one is the largest resolution
-            return candidates[-1]
+            if image_url:
+                return image_url
 
     return None
 
 
 def get_items():
-    r = requests.get(
+    response = requests.get(
         SEARCH_URL,
         headers=HEADERS,
         timeout=20,
     )
 
-    r.raise_for_status()
+    response.raise_for_status()
 
-    soup = BeautifulSoup(r.text, "html.parser")
+    soup = BeautifulSoup(
+        response.text,
+        "html.parser",
+    )
 
+    # Vinted product links
     items = soup.select(
-        'a[data-testid^="product-item-id"]'
+        'a[data-testid^="product-item-id"][data-testid$="--overlay-link"]'
     )
 
     print("Found product links:", len(items))
@@ -152,43 +208,54 @@ def get_items():
         # Normalize link
         if link.startswith("/"):
             link = "https://www.vinted.pl" + link
+
         elif not link.startswith("http"):
             link = "https://www.vinted.pl/" + link
 
+        # Already sent
         if link in seen:
             continue
 
+        # Extract price
         price = parse_price(title_attr)
 
         if not price or price > 50:
             continue
 
+        # Product title
         title = title_attr.split(",")[0]
 
         # Find the product container
         parent = item.find_parent(
             "div",
-            class_="new-item-box__container",
+            class_=lambda classes:
+                classes
+                and any(
+                    "new-item-box__container" in cls
+                    for cls in classes
+                ),
         )
 
+        # Extract image
         image_url = get_image_url(parent)
 
+        print()
         print("TITLE:", title)
         print("PRICE:", price)
         print("IMAGE:", image_url)
         print("LINK:", link)
-        print("---")
 
-        results.append({
-            "title": title,
-            "price": price,
-            "link": link,
-            "image": image_url,
-        })
+        results.append(
+            {
+                "title": title,
+                "price": price,
+                "link": link,
+                "image": image_url,
+            }
+        )
 
         seen.add(link)
 
-    # IMPORTANT:
     # Save only after processing all products
     save_seen(seen)
 
@@ -228,14 +295,21 @@ def main():
         )
 
         if image_url:
-            print("Sending image:", image_url)
+            print(
+                "Sending image:",
+                image_url,
+            )
 
             send_telegram_photo(
                 image_url,
                 caption,
             )
+
         else:
-            print("No image found")
+            print(
+                "No image found for:",
+                title,
+            )
 
             send_telegram(caption)
 
